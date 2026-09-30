@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lokmat Compass — Tour Report</title>
+
+    <!-- SheetJS (xlsx) for building the Excel file client-side -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #0f0f12;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 640px;
+            background: #1a1a1f;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        h1 {
+            margin: 0 0 4px 0;
+            font-size: 22px;
+            color: #ffffff;
+        }
+        .subtitle {
+            margin: 0 0 24px 0;
+            font-size: 13px;
+            color: #888;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        input[type="email"],
+        input[type="password"],
+        input[type="date"] {
+            width: 100%;
+            padding: 12px 14px;
+            background: #252530;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            outline: none;
+        }
+        input[type="email"]:focus,
+        input[type="password"]:focus,
+        input[type="date"]:focus {
+            border-color: #0077b6;
+        }
+        .row {
+            display: flex;
+            gap: 12px;
+        }
+        .row > div {
+            flex: 1;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-top: 24px;
+            background: #0077b6;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        button:hover:not(:disabled) {
+            background: #0090dd;
+        }
+        button:disabled {
+            background: #333;
+            color: #777;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: none;
+        }
+        .status.info {
+            display: block;
+            background: #1e2a3a;
+            color: #90caf9;
+        }
+        .status.error {
+            display: block;
+            background: #2a1a1a;
+            color: #ef5350;
+        }
+        .status.success {
+            display: block;
+            background: #1e2f1e;
+            color: #66bb6a;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .footer-note {
+            margin-top: 24px;
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- ========== LOGIN VIEW ========== -->
+    <div id="loginView">
+        <h1>Lokmat Compass</h1>
+        <p class="subtitle">Admin login required</p>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="admin@lokmat.com" autocomplete="username" />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+
+        <button id="loginBtn">Sign in</button>
+
+        <div id="loginStatus" class="status"></div>
+    </div>
+
+    <!-- ========== REPORT VIEW ========== -->
+    <div id="reportView" class="hidden">
+        <h1>Tour Report</h1>
+        <p class="subtitle">Download tours for a date range</p>
+
+        <div class="row">
+            <div>
+                <label for="fromDate">From</label>
+                <input type="date" id="fromDate" />
+            </div>
+            <div>
+                <label for="toDate">To</label>
+                <input type="date" id="toDate" />
+            </div>
+        </div>
+
+        <button id="downloadBtn">Download Excel</button>
+        <button id="logoutBtn" style="background:#333;margin-top:8px;">Sign out</button>
+
+        <div id="reportStatus" class="status"></div>
+    </div>
+
+    <div class="footer-note">
+        Data source: Firestore · Only completed tours · Admin access
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import {
+        getAuth,
+        signInWithEmailAndPassword,
+        signOut,
+        onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+    import {
+        getFirestore,
+        doc,
+        getDoc,
+        collection,
+        getDocs
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+    // ---------- Firebase config ----------
+    // Same values as your Android app's google-services.json
+    const firebaseConfig = {
+        apiKey: "AIzaSyBWKbuh9JVf8n1mBBkKgHiEX8iTwZhY140",
+        authDomain: "tour-d9ca0.firebaseapp.com",
+        projectId: "tour-d9ca0",
+        storageBucket: "tour-d9ca0.firebasestorage.app",
+        messagingSenderId: "1015355424309",
+        appId: "1:1015355424309:android:4e13c552aba115f00c7b7c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // ---------- DOM refs ----------
+    const loginView = document.getElementById("loginView");
+    const reportView = document.getElementById("reportView");
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+    const loginBtn = document.getElementById("loginBtn");
+    const loginStatus = document.getElementById("loginStatus");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const fromDateEl = document.getElementById("fromDate");
+    const toDateEl = document.getElementById("toDate");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const reportStatus = document.getElementById("reportStatus");
+
+    // ---------- Helpers ----------
+    function emailDocId(email) {
+        return email.toLowerCase().replace(/@/g, "_").replace(/\./g, "_");
+    }
+
+    function setStatus(el, message, kind) {
+        el.className = "status " + (kind || "");
+        el.textContent = message || "";
+        if (!message) el.className = "status";
+    }
+
+    function showReportView() {
+        loginView.classList.add("hidden");
+        reportView.classList.remove("hidden");
+    }
+
+    function showLoginView() {
+        reportView.classList.add("hidden");
+        loginView.classList.remove("hidden");
+    }
+
+    // yyyy-mm-dd → Date at local midnight
+    function parseLocalDate(str) {
+        const [y, m, d] = str.split("-").map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    // yyyy-mm-dd string for the Date
+    function formatDateOnly(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    }
+
+    // For a millisecond timestamp, produce yyyy-mm-dd in local time
+    function msToLocalDateStr(ms) {
+        return formatDateOnly(new Date(ms));
+    }
+
+    // ---------- Auth state ----------
+    onAuthStateChanged(auth, async (user) => {
+        if (!user || !user.email) {
+            showLoginView();
+            return;
+        }
+
+        // Verify role == "admin"
+        setStatus(loginStatus, "Checking admin access…", "info");
+        try {
+            const docId = emailDocId(user.email);
+            const snap = await getDoc(doc(db, "users", docId));
+            if (!snap.exists()) {
+                setStatus(loginStatus, "No user profile found", "error");
+                await signOut(auth);
+                return;
+            }
+            const role = (snap.data().role || "").toLowerCase();
+            if (role !== "admin") {
+                setStatus(loginStatus, "Access denied — admin role required", "error");
+                await signOut(auth);
+                return;
+            }
+
+            // All good
+            setStatus(loginStatus, "", "");
+            showReportView();
+
+            // Default date range = today
+            if (!fromDateEl.value) fromDateEl.value = formatDateOnly(new Date());
+            if (!toDateEl.value) toDateEl.value = formatDateOnly(new Date());
+        } catch (e) {
+            console.error(e);
+            setStatus(loginStatus, "Failed to verify admin: " + e.message, "error");
+            await signOut(auth);
+        }
+    });
+
+    // ---------- Login ----------
+    loginBtn.addEventListener("click", async () => {
+        const email = emailEl.value.trim();
+        const password = passwordEl.value;
+        if (!email || !password) {
+            setStatus(loginStatus, "Enter email and password", "error");
+            return;
+        }
+        loginBtn.disabled = true;
+        setStatus(loginStatus, "Signing in…", "info");
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            // onAuthStateChanged will handle the rest
+        } catch (e) {
+            console.error(e);
+            setStatus(loginStatus, e.message || "Login failed", "error");
+        } finally {
+            loginBtn.disabled = false;
+        }
+    });
+
+    passwordEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") loginBtn.click();
+    });
+
+    // ---------- Logout ----------
+    logoutBtn.addEventListener("click", async () => {
+        await signOut(auth);
+    });
+
+    // ---------- Download report ----------
+    downloadBtn.addEventListener("click", async () => {
+        const fromStr = fromDateEl.value;
+        const toStr = toDateEl.value;
+        if (!fromStr || !toStr) {
+            setStatus(reportStatus, "Please pick both From and To dates", "error");
+            return;
+        }
+        const fromDate = parseLocalDate(fromStr);
+        const toDate = parseLocalDate(toStr);
+        if (fromDate > toDate) {
+            setStatus(reportStatus, "From date must be on or before To date", "error");
+            return;
+        }
+
+        downloadBtn.disabled = true;
+        setStatus(reportStatus, "Loading data…", "info");
+
+        try {
+            // 1. Fetch all users
+            const usersSnap = await getDocs(collection(db, "users"));
+            const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // 2. Build a lookup: emailDocId → fullName
+            const nameByDocId = {};
+            users.forEach(u => {
+                nameByDocId[u.id] = u.fullName || u.email || u.id;
+            });
+
+            // 3. Fetch each user's tours and filter
+            const rows = [];
+            for (const u of users) {
+                const toursSnap = await getDocs(collection(db, "users", u.id, "tours"));
+                toursSnap.forEach(tDoc => {
+                    const t = tDoc.data();
+                    if (t.status !== "completed") return;
+
+                    const startedAt = t.startedAt;
+                    if (!startedAt || typeof startedAt !== "number") return;
+
+                    // Compute the local date string of startedAt
+                    const startedDateStr = msToLocalDateStr(startedAt);
+
+                    // Include if startedDateStr is between fromStr and toStr (inclusive, string comparison works for yyyy-mm-dd)
+                    if (startedDateStr < fromStr) return;
+                    if (startedDateStr > toStr) return;
+
+                    const employeeName = u.fullName || u.email || u.id;
+                    const route = `${t.from || ""}-${t.to || ""}`;
+
+                    rows.push({
+                        employee: employeeName,
+                        date: startedDateStr,
+                        route: route,
+                        dcr: Number(t.dcrDistanceKm || 0),
+                        manual: Number(t.manualDistanceKm || 0)
+                    });
+                });
+            }
+
+            if (rows.length === 0) {
+                setStatus(reportStatus, "No tours found in this date range", "error");
+                downloadBtn.disabled = false;
+                return;
+            }
+
+            // Sort: by date ASC, then by employee name
+            rows.sort((a, b) => {
+                if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+                return a.employee.localeCompare(b.employee);
+            });
+
+            // 4. Build worksheet data
+            const header = [
+                "Name of Employee",
+                "Date",
+                "Destination/Route",
+                "DCR Distance",
+                "Manual Distance"
+            ];
+            const aoa = [header];
+            rows.forEach(r => {
+                aoa.push([r.employee, r.date, r.route, r.dcr, r.manual]);
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+            // Column widths
+            ws["!cols"] = [
+                { wch: 24 },   // Name
+                { wch: 14 },   // Date
+                { wch: 32 },   // Route
+                { wch: 14 },   // DCR
+                { wch: 16 }    // Manual
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Tours");
+
+            // 5. Trigger download
+            const filename = `Tour_Report_${fromStr}_to_${toStr}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            setStatus(
+                reportStatus,
+                `Downloaded ${rows.length} tour(s) → ${filename}`,
+                "success"
+            );
+        } catch (e) {
+            console.error(e);
+            setStatus(reportStatus, "Failed: " + (e.message || e), "error");
+        } finally {
+            downloadBtn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
