@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lokmat Compass — Tour Report</title>
+    <title>Compass — Tour Report</title>
 
     <!-- SheetJS (xlsx) for building the Excel file client-side -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -131,10 +131,10 @@
     <!-- ========== LOGIN VIEW ========== -->
     <div id="loginView">
         <h1>Lokmat Compass</h1>
-        <p class="subtitle">Admin login required</p>
+        <p class="subtitle">Admin / HOD login required</p>
 
         <label for="email">Email</label>
-        <input type="email" id="email" placeholder="admin@lokmat.com" autocomplete="username" />
+        <input type="email" id="email" placeholder="abc@xyz.com" autocomplete="username" />
 
         <label for="password">Password</label>
         <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
@@ -167,7 +167,7 @@
     </div>
 
     <div class="footer-note">
-        Data source: Firestore · Only completed tours · Admin access
+        Data source: Firestore · Only completed tours · Admin / HOD access
     </div>
 </div>
 
@@ -188,7 +188,6 @@
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
     // ---------- Firebase config ----------
-    // Same values as your Android app's google-services.json
     const firebaseConfig = {
         apiKey: "AIzaSyBWKbuh9JVf8n1mBBkKgHiEX8iTwZhY140",
         authDomain: "tour-d9ca0.firebaseapp.com",
@@ -262,8 +261,8 @@
             return;
         }
 
-        // Verify role == "admin"
-        setStatus(loginStatus, "Checking admin access…", "info");
+        // Verify role is "admin" OR "hod"
+        setStatus(loginStatus, "Checking access…", "info");
         try {
             const docId = emailDocId(user.email);
             const snap = await getDoc(doc(db, "users", docId));
@@ -273,8 +272,8 @@
                 return;
             }
             const role = (snap.data().role || "").toLowerCase();
-            if (role !== "admin") {
-                setStatus(loginStatus, "Access denied — admin role required", "error");
+            if (role !== "admin" && role !== "hod") {
+                setStatus(loginStatus, "Access denied — admin or HOD role required", "error");
                 await signOut(auth);
                 return;
             }
@@ -288,7 +287,7 @@
             if (!toDateEl.value) toDateEl.value = formatDateOnly(new Date());
         } catch (e) {
             console.error(e);
-            setStatus(loginStatus, "Failed to verify admin: " + e.message, "error");
+            setStatus(loginStatus, "Failed to verify role: " + e.message, "error");
             await signOut(auth);
         }
     });
@@ -346,13 +345,7 @@
             const usersSnap = await getDocs(collection(db, "users"));
             const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            // 2. Build a lookup: emailDocId → fullName
-            const nameByDocId = {};
-            users.forEach(u => {
-                nameByDocId[u.id] = u.fullName || u.email || u.id;
-            });
-
-            // 3. Fetch each user's tours and filter
+            // 2. Fetch each user's tours and filter
             const rows = [];
             for (const u of users) {
                 const toursSnap = await getDocs(collection(db, "users", u.id, "tours"));
@@ -363,10 +356,9 @@
                     const startedAt = t.startedAt;
                     if (!startedAt || typeof startedAt !== "number") return;
 
-                    // Compute the local date string of startedAt
                     const startedDateStr = msToLocalDateStr(startedAt);
 
-                    // Include if startedDateStr is between fromStr and toStr (inclusive, string comparison works for yyyy-mm-dd)
+                    // Include if startedDateStr is between fromStr and toStr (inclusive)
                     if (startedDateStr < fromStr) return;
                     if (startedDateStr > toStr) return;
 
@@ -389,13 +381,13 @@
                 return;
             }
 
-            // Sort: by date ASC, then by employee name
+            // Sort: date ASC, then employee name
             rows.sort((a, b) => {
                 if (a.date !== b.date) return a.date < b.date ? -1 : 1;
                 return a.employee.localeCompare(b.employee);
             });
 
-            // 4. Build worksheet data
+            // 3. Build worksheet data
             const header = [
                 "Name of Employee",
                 "Date",
@@ -410,7 +402,6 @@
 
             const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-            // Column widths
             ws["!cols"] = [
                 { wch: 24 },   // Name
                 { wch: 14 },   // Date
@@ -422,7 +413,7 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Tours");
 
-            // 5. Trigger download
+            // 4. Trigger download
             const filename = `Tour_Report_${fromStr}_to_${toStr}.xlsx`;
             XLSX.writeFile(wb, filename);
 
